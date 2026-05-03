@@ -20,16 +20,21 @@ document.getElementById("play-again-btn").addEventListener("click", resetGame);
 //  x/y = top-left corner, w = width, h = height
 // =============================================
 const WALLS = [
-  // Horizontal divider across the upper third
-  { x: 0,   y: 160, w: 500, h: 18 },
-  // Vertical wall on the right side of that divider
-  { x: 500, y: 160, w: 18,  h: 140 },
-  // Lower horizontal barrier
-  { x: 150, y: 320, w: 400, h: 18 },
-  // Short vertical blocker near the middle
-  { x: 280, y: 220, w: 18,  h: 100 },
-  // Left-side vertical wall segment
-  { x: 100, y: 50,  w: 18,  h: 130 },
+  // Gate 1 — left edge to x=560, gap on RIGHT (x=560-700)
+  // Ball starts bottom-left and must travel RIGHT to pass through
+  { x: 0,   y: 325, w: 560, h: 18 },
+
+  // Gate 2 — x=140 to right edge, gap on LEFT (x=0-140)
+  // After crossing Gate 1, ball must travel LEFT to pass through
+  { x: 140, y: 168, w: 560, h: 18 },
+
+  // Top blocker — canvas top down to near Gate 2, gap at bottom (y=128-168)
+  // Ball must skim the bottom of the top section to reach the hole
+  { x: 380, y: 0,   w: 18,  h: 128 },
+
+  // Middle obstacle — floating blocker in the middle corridor
+  // Adds a detour between the two gates; passable above (34px) or below (30px)
+  { x: 310, y: 220, w: 18,  h: 75  },
 ];
 
 // =============================================
@@ -81,9 +86,11 @@ const POWER_SCALE = 0.12;    // converts drag pixels to velocity units
 // =============================================
 
 canvas.addEventListener("mousedown", onMouseDown);
-canvas.addEventListener("mousemove", onMouseMove);
-canvas.addEventListener("mouseup", onMouseUp);
-canvas.addEventListener("mouseleave", cancelAim); // abandon aim if mouse leaves canvas without releasing
+// mousemove and mouseup are on window, not canvas — this means the drag
+// keeps working even when the cursor leaves the canvas boundary, so the
+// player can pull back to full power from any ball position.
+window.addEventListener("mousemove", onMouseMove);
+window.addEventListener("mouseup", onMouseUp);
 
 // Also support touch for mobile/tablet
 canvas.addEventListener("touchstart",  e => { e.preventDefault(); onMouseDown(e.touches[0]); }, { passive: false });
@@ -145,13 +152,6 @@ function onMouseUp(event) {
   isMoving = true;
   canvas.classList.add("ball-rolling"); // cursor → not-allowed while ball moves
   updateShotCounter();
-}
-
-function cancelAim() {
-  // Called when the mouse leaves the canvas — silently drops the drag
-  // without firing a shot, so accidental edge-exits don't count as shots.
-  aim.active = false;
-  aim.currentX = undefined;
 }
 
 // =============================================

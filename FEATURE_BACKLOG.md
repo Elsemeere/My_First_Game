@@ -6,6 +6,7 @@ Ideas for future versions, roughly ordered from easiest to hardest. Don't implem
 
 ## Easy wins (good next steps)
 
+- [x] **Golf course visual theme** — green fairway + rough border, mown stripes, stone-bevelled walls, radial-gradient ball, turf shadow around hole, cream flag pole, yellow-to-red aim line
 - [ ] **Multiple levels** — add a `levels` array and a "Next Level" button on the win screen
 - [ ] **Par system** — define a par score per level; show "2 under par!" on the win screen
 - [ ] **Best score memory** — use `localStorage` to remember the player's best shot count per level

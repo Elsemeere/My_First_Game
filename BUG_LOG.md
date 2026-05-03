@@ -36,12 +36,12 @@ Log known bugs here as you find them. Include what you were doing when it happen
 - **How to reproduce:** Click far from the ball and drag — ball fires in that direction but the aim line originates from the ball, making the visual inconsistent.
 - **Notes:** `onMouseDown` was recording the click position as the drag origin. Fixed by always setting `aim.startX = ball.x` and `aim.startY = ball.y` on mousedown, anchoring the slingshot to the ball.
 
-### [BUG-003] Moving mouse off the canvas accidentally fired a shot
+### [BUG-003] Dragging outside the canvas boundary cancelled the aim
 - **Status:** Fixed
 - **Found:** 2026-05-02
-- **Fixed:** 2026-05-02
-- **How to reproduce:** Start a drag, drift the mouse off the canvas edge — a shot fires from the exit position.
-- **Notes:** `mouseleave` was wired to `onMouseUp`, which fires a shot. Fixed by adding a separate `cancelAim()` function that clears the drag state without firing.
+- **Fixed:** 2026-05-03
+- **How to reproduce:** Ball near a canvas edge — pulling back past the edge cancelled the drag, preventing full-power shots.
+- **Notes:** `mousemove` and `mouseup` were scoped to the canvas element. Moved both to `window` so drag tracking continues even when the cursor leaves the canvas. The `if (!aim.active) return` guard in each handler keeps them harmless when no drag is in progress.
 
 ### [BUG-004] Win triggered before ball visually reached the hole; ball snapped to hole center
 - **Status:** Fixed
