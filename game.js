@@ -266,6 +266,7 @@ function draw() {
   // Clear the whole canvas
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+  drawBackground();
   drawHole();
   drawWalls();
   drawBall();
@@ -281,53 +282,89 @@ function draw() {
   }
 }
 
+function drawBackground() {
+  // Rough — the darker green border around the edge of the course
+  ctx.fillStyle = "#2d6044";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Fairway — the lighter playing surface, inset from the rough border
+  ctx.fillStyle = "#4d9960";
+  ctx.fillRect(14, 14, canvas.width - 28, canvas.height - 28);
+
+  // Mown stripes — alternating 40px bands, barely visible, like a real fairway
+  ctx.fillStyle = "rgba(0, 0, 0, 0.04)";
+  for (let x = 14; x < canvas.width - 14; x += 80) {
+    ctx.fillRect(x, 14, 40, canvas.height - 28);
+  }
+}
+
 function drawHole() {
-  // Outer dark circle (the cup)
+  // Turf shadow — a soft dark ring around the cup to suggest it's cut into the green
   ctx.beginPath();
-  ctx.arc(HOLE.x, HOLE.y, HOLE.radius, 0, Math.PI * 2);
-  ctx.fillStyle = "#000";
+  ctx.arc(HOLE.x, HOLE.y, HOLE.radius + 5, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(0, 0, 0, 0.25)";
   ctx.fill();
 
-  // White ring to make it stand out on the dark background
-  ctx.strokeStyle = "#fff";
-  ctx.lineWidth = 2;
-  ctx.stroke();
+  // The cup itself
+  ctx.beginPath();
+  ctx.arc(HOLE.x, HOLE.y, HOLE.radius, 0, Math.PI * 2);
+  ctx.fillStyle = "#111";
+  ctx.fill();
 
-  // Small flag pole
+  // Flag pole — cream colour so it reads against both green and black
   ctx.beginPath();
   ctx.moveTo(HOLE.x, HOLE.y - HOLE.radius);
-  ctx.lineTo(HOLE.x, HOLE.y - HOLE.radius - 20);
-  ctx.strokeStyle = "#aaa";
-  ctx.lineWidth = 1.5;
+  ctx.lineTo(HOLE.x, HOLE.y - HOLE.radius - 22);
+  ctx.strokeStyle = "#e8e0c8";
+  ctx.lineWidth = 2;
   ctx.stroke();
 
   // Flag
   ctx.beginPath();
-  ctx.moveTo(HOLE.x, HOLE.y - HOLE.radius - 20);
-  ctx.lineTo(HOLE.x + 12, HOLE.y - HOLE.radius - 14);
+  ctx.moveTo(HOLE.x, HOLE.y - HOLE.radius - 22);
+  ctx.lineTo(HOLE.x + 14, HOLE.y - HOLE.radius - 15);
   ctx.lineTo(HOLE.x, HOLE.y - HOLE.radius - 8);
   ctx.fillStyle = "#e74c3c";
   ctx.fill();
 }
 
 function drawWalls() {
-  ctx.fillStyle = "#4a90d9";
   for (const wall of WALLS) {
+    // Main stone fill
+    ctx.fillStyle = "#9e9e8e";
     ctx.fillRect(wall.x, wall.y, wall.w, wall.h);
+
+    // Top highlight — catches the light, makes the wall feel solid
+    ctx.fillStyle = "#c8c8b4";
+    ctx.fillRect(wall.x, wall.y, wall.w, 3);
+
+    // Left highlight
+    ctx.fillStyle = "#b4b4a0";
+    ctx.fillRect(wall.x, wall.y + 3, 3, wall.h - 3);
+
+    // Bottom shadow
+    ctx.fillStyle = "#6a6a5a";
+    ctx.fillRect(wall.x, wall.y + wall.h - 3, wall.w, 3);
+
+    // Right shadow
+    ctx.fillRect(wall.x + wall.w - 3, wall.y, 3, wall.h);
   }
 }
 
 function drawBall() {
-  // Outer white ball
+  // Radial gradient: bright highlight top-left fading to gray at the edges.
+  // This makes the flat circle read as a 3D sphere under a light source.
+  const gradient = ctx.createRadialGradient(
+    ball.x - 3, ball.y - 3, 1,        // small highlight circle, offset top-left
+    ball.x,     ball.y,     ball.radius // full ball circle
+  );
+  gradient.addColorStop(0, "#ffffff"); // bright white at the highlight
+  gradient.addColorStop(1, "#a0a0a0"); // mid-gray at the shadowed edge
+
   ctx.beginPath();
   ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
-  ctx.fillStyle = "#ffffff";
+  ctx.fillStyle = gradient;
   ctx.fill();
-
-  // Subtle shadow ring
-  ctx.strokeStyle = "#bbb";
-  ctx.lineWidth = 1;
-  ctx.stroke();
 }
 
 function drawAimLine() {
@@ -348,11 +385,12 @@ function drawAimLine() {
   ctx.moveTo(ball.x, ball.y);
   ctx.lineTo(launchX, launchY);
 
-  // Colour shifts from green (gentle) to red (full power)
+  // Colour shifts from yellow (gentle) to red (full power).
+  // Yellow and red both contrast well against the green fairway.
   const powerRatio = power / MAX_POWER;
-  const r = Math.round(powerRatio * 220);
-  const g = Math.round((1 - powerRatio) * 200);
-  ctx.strokeStyle = `rgb(${r}, ${g}, 80)`;
+  const r = Math.round(200 + powerRatio * 55);   // 200 → 255
+  const g = Math.round(200 - powerRatio * 200);  // 200 → 0
+  ctx.strokeStyle = `rgb(${r}, ${g}, 0)`;
   ctx.lineWidth = 2;
   ctx.stroke();
   ctx.restore();

@@ -69,11 +69,12 @@ button:hover {
 /* The game canvas gets a border so its edges are visible */
 #game-canvas {
   display: block;
-  border: 3px solid #a8edea;
+  border: 3px solid #1e4d2b;
   border-radius: 0 0 4px 4px;
   /* Cursor changes to crosshair so aiming feels intentional */
   cursor: crosshair;
-  background-color: #0d1b2a;
+  /* Matches the rough border colour so there's no flash before JS draws */
+  background-color: #2d6044;
 }
 
 /* While the ball is rolling, block aim input and signal it with the cursor */
