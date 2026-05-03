@@ -15,6 +15,44 @@ document.getElementById("reset-btn").addEventListener("click", resetGame);
 document.getElementById("play-again-btn").addEventListener("click", resetGame);
 
 // =============================================
+//  AUDIO
+//  new Audio() works with local file:// URLs; fetch()-based Web Audio does not.
+//  currentTime = 0 rewinds before each play so rapid shots don't get cut off.
+// =============================================
+const hitSound = new Audio('Sound Effects/Ball Hit on Fairway.wav');
+
+function playHitSound() {
+  // Skip the silent lead-in at the start of the file.
+  // Adjust this number (in seconds) if the sound still feels early or late.
+  hitSound.currentTime = 0.0;
+  hitSound.play().catch(() => {});
+}
+
+// =============================================
+//  TILE IMAGES
+//  Loaded asynchronously — the game loop starts only once all 3 are ready.
+// =============================================
+const imgFairway = new Image();
+const imgRough   = new Image();
+const imgGreen   = new Image();
+
+let tilesLoaded = 0;
+function onTileLoaded() {
+  tilesLoaded++;
+  if (tilesLoaded === 3) {
+    buildTileGrid(); // classify every canvas cell before the first draw
+    gameLoop();
+  }
+}
+imgFairway.onload = onTileLoaded;
+imgRough.onload   = onTileLoaded;
+imgGreen.onload   = onTileLoaded;
+
+imgFairway.src = 'Graphic Assets/Tiles/Fairway Tile.png';
+imgRough.src   = 'Graphic Assets/Tiles/Rough Tile.png';
+imgGreen.src   = 'Graphic Assets/Tiles/Green Tile.png';
+
+// =============================================
 //  LEVEL DATA
 //  Each wall is a rectangle: { x, y, w, h }
 //  x/y = top-left corner, w = width, h = height
@@ -67,6 +105,7 @@ const BALL_START = { x: ball.x, y: ball.y };
 let shots = 0;          // how many times the player has fired
 let gameWon = false;    // true once the ball reaches the hole
 let isMoving = false;   // true while the ball is rolling
+let tileGrid = [];      // 2D array of 'rough'|'fairway'|'green', built once on load
 
 // Aiming state — tracks the mouse drag
 const aim = {
@@ -80,6 +119,10 @@ const FRICTION = 0.985;      // multiply velocity by this each frame (1.0 = no f
 const MIN_SPEED = 0.15;      // below this speed the ball is considered stopped
 const MAX_POWER = 180;       // maximum drag distance (in pixels) — caps shot power
 const POWER_SCALE = 0.12;    // converts drag pixels to velocity units
+
+// Tile constants
+const TILE_SIZE    = 32;  // canvas pixels per background tile
+const GREEN_RADIUS = 65;  // pixel radius of the putting green around the hole
 
 // =============================================
 //  INPUT — Mouse events for aiming
@@ -151,6 +194,7 @@ function onMouseUp(event) {
   shots++;
   isMoving = true;
   canvas.classList.add("ball-rolling"); // cursor → not-allowed while ball moves
+  playHitSound();
   updateShotCounter();
 }
 
@@ -259,6 +303,62 @@ function resolveWallCollision(ball, wall) {
 }
 
 // =============================================
+//  TILE GRID BUILDER
+//  Runs once when images load. Classifies every 32×32 cell on the canvas
+//  as 'rough', 'fairway', or 'green' so drawBackground() can stamp the
+//  right image each frame without re-calculating anything.
+// =============================================
+
+function buildTileGrid() {
+  const cols = Math.ceil(canvas.width  / TILE_SIZE) + 1;
+  const rows = Math.ceil(canvas.height / TILE_SIZE) + 1;
+  tileGrid = [];
+  for (let row = 0; row < rows; row++) {
+    tileGrid[row] = [];
+    for (let col = 0; col < cols; col++) {
+      // Use the centre of the cell for distance checks
+      const cx = col * TILE_SIZE + TILE_SIZE / 2;
+      const cy = row * TILE_SIZE + TILE_SIZE / 2;
+      tileGrid[row][col] = classifyTile(col, row, cx, cy);
+    }
+  }
+}
+
+function classifyTile(col, row, cx, cy) {
+  // 1. Green — smooth putting surface around the hole (highest priority)
+  const dHole = Math.sqrt((cx - HOLE.x) ** 2 + (cy - HOLE.y) ** 2);
+  if (dHole < GREEN_RADIUS) return 'green';
+
+  // 2. Rough near canvas edges only — depth varies 1–2 tiles with a low-frequency
+  //    wave so the border undulates gently rather than cutting in choppy blocks.
+  //    Walls are NOT given a rough fringe — they read clearly as stone obstacles
+  //    and adding rough around them fragments the fairway corridors.
+  const edgeDist = Math.min(cx, cy, canvas.width - cx, canvas.height - cy);
+  if (edgeDist < roughVariance(col, row, 1, 2) * TILE_SIZE) return 'rough';
+
+  // 3. Everything else is open fairway
+  return 'fairway';
+}
+
+// Returns a consistent integer in [min, max] based on tile position.
+// Low-frequency multipliers (0.3–0.5) produce long, slow waves so the rough
+// edge curves gently rather than producing small choppy blocks.
+function roughVariance(col, row, min, max) {
+  const v = Math.sin(col * 0.35 + row * 0.5) * Math.cos(col * 0.28 - row * 0.42);
+  // v is in [-1, 1]; map to [min, max]
+  return min + Math.round(((v + 1) / 2) * (max - min));
+}
+
+// Returns the closest point on a wall rectangle to the given point.
+// Shared between tile classification and wall collision.
+function closestPointOnRect(px, py, wall) {
+  return {
+    x: Math.max(wall.x, Math.min(px, wall.x + wall.w)),
+    y: Math.max(wall.y, Math.min(py, wall.y + wall.h)),
+  };
+}
+
+// =============================================
 //  DRAWING — clears and redraws every frame
 // =============================================
 
@@ -283,18 +383,16 @@ function draw() {
 }
 
 function drawBackground() {
-  // Rough — the darker green border around the edge of the course
-  ctx.fillStyle = "#2d6044";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  // Fairway — the lighter playing surface, inset from the rough border
-  ctx.fillStyle = "#4d9960";
-  ctx.fillRect(14, 14, canvas.width - 28, canvas.height - 28);
-
-  // Mown stripes — alternating 40px bands, barely visible, like a real fairway
-  ctx.fillStyle = "rgba(0, 0, 0, 0.04)";
-  for (let x = 14; x < canvas.width - 14; x += 80) {
-    ctx.fillRect(x, 14, 40, canvas.height - 28);
+  // Stamp each pre-classified tile with the matching texture image.
+  // The grid was built once at load time so no distance checks happen here.
+  for (let row = 0; row < tileGrid.length; row++) {
+    for (let col = 0; col < tileGrid[row].length; col++) {
+      const type = tileGrid[row][col];
+      const img  = type === 'rough' ? imgRough
+                 : type === 'green' ? imgGreen
+                 :                    imgFairway;
+      ctx.drawImage(img, col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+    }
   }
 }
 
@@ -465,5 +563,6 @@ function updateShotCounter() {
 
 // =============================================
 //  START
+//  The game loop is kicked off by onTileLoaded() once all 3 tile
+//  images have finished loading (see the TILE IMAGES section above).
 // =============================================
-gameLoop();
