@@ -1,0 +1,114 @@
+/* =============================================
+   Maze Golf — Stylesheet
+   ============================================= */
+
+/* Reset default browser spacing */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background-color: #1a1a2e;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  font-family: Arial, sans-serif;
+  color: #eee;
+}
+
+/* Wrapper that holds the UI bar, canvas, and win screen together */
+#game-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Top bar with title, shot counter, and reset button */
+#ui-bar {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  width: 700px;
+  padding: 8px 12px;
+  background-color: #16213e;
+  border-radius: 8px 8px 0 0;
+}
+
+#title-label {
+  font-size: 1.3rem;
+  font-weight: bold;
+  color: #a8edea;
+  flex: 1;
+}
+
+#shot-counter {
+  font-size: 1rem;
+  color: #ffd460;
+}
+
+/* Reset button */
+button {
+  padding: 6px 16px;
+  background-color: #0f3460;
+  color: #eee;
+  border: 1px solid #a8edea;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: background-color 0.15s;
+}
+
+button:hover {
+  background-color: #1a5276;
+}
+
+/* The game canvas gets a border so its edges are visible */
+#game-canvas {
+  display: block;
+  border: 3px solid #a8edea;
+  border-radius: 0 0 4px 4px;
+  /* Cursor changes to crosshair so aiming feels intentional */
+  cursor: crosshair;
+  background-color: #0d1b2a;
+}
+
+/* While the ball is rolling, block aim input and signal it with the cursor */
+#game-canvas.ball-rolling {
+  cursor: not-allowed;
+}
+
+/* Win screen sits on top of the canvas using absolute positioning */
+#win-screen {
+  position: absolute;
+  width: 700px;
+  height: 500px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: rgba(0, 0, 0, 0.6);
+  border-radius: 0 0 4px 4px;
+}
+
+/* The popup card inside the win screen */
+#win-box {
+  background-color: #16213e;
+  border: 2px solid #a8edea;
+  border-radius: 12px;
+  padding: 32px 48px;
+  text-align: center;
+}
+
+#win-box h2 {
+  font-size: 1.8rem;
+  color: #ffd460;
+  margin-bottom: 20px;
+}
+
+/* Utility class to hide any element */
+.hidden {
+  display: none !important;
+}

@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Maze Golf</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <div id="game-container">
+
+    <!-- Top bar: title and shot counter -->
+    <div id="ui-bar">
+      <span id="title-label">Maze Golf</span>
+      <span id="shot-counter">Shots: 0</span>
+      <button id="reset-btn">Reset</button>
+    </div>
+
+    <!-- The canvas is where all game drawing happens -->
+    <canvas id="game-canvas" width="700" height="500"></canvas>
+
+    <!-- Win screen shown on top of the canvas when the ball reaches the hole -->
+    <div id="win-screen" class="hidden">
+      <div id="win-box">
+        <h2>Hole in <span id="win-shots">?</span> shots!</h2>
+        <button id="play-again-btn">Play Again</button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Load the game logic last so the DOM is ready -->
+  <script src="game.js"></script>
+</body>
+</html>
