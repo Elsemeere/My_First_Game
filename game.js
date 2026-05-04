@@ -31,7 +31,12 @@ function playHitSound() {
   hitSound.play().catch(() => {});
 }
 
+let lastBounceTime = 0;
 function playBounceSound() {
+  // Rate-limit to prevent a barrage of sounds when the ball hits at high speed.
+  const now = performance.now();
+  if (now - lastBounceTime < 80) return;
+  lastBounceTime = now;
   bounceSound.currentTime = 0.0;
   bounceSound.play().catch(() => {});
 }
@@ -318,12 +323,13 @@ function updateBall() {
   // which is always smaller than the thinnest wall (18px).
   const speed = Math.sqrt(ball.velX * ball.velX + ball.velY * ball.velY);
   const steps = Math.max(1, Math.ceil(speed / ball.radius));
-  const sx = ball.velX / steps;
-  const sy = ball.velY / steps;
 
   for (let i = 0; i < steps; i++) {
-    ball.x += sx;
-    ball.y += sy;
+    // Divide current velocity (not a pre-computed constant) so that if a collision
+    // reflects the velocity mid-loop, subsequent steps move in the new direction
+    // instead of pushing the ball back into the wall and causing stuck oscillation.
+    ball.x += ball.velX / steps;
+    ball.y += ball.velY / steps;
 
     // Bounce off the perimeter wall
     if (ball.x - ball.radius < PERIM) {
