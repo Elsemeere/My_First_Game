@@ -26,7 +26,7 @@ Ideas for future versions, roughly ordered from easiest to hardest. Don't implem
 
 ## Harder features
 
-- [ ] **Moving walls** — walls that oscillate back and forth on a timer
+- [x] **Moving walls** — walls that oscillate back and forth on a timer
 - [ ] **Wind** — a directional force applied each shot (shown as an arrow indicator)
 - [ ] **Ramps / slopes** — angled surfaces that redirect the ball (requires rotated rectangle collision)
 - [ ] **Level editor** — drag-and-drop interface to place walls and save levels as JSON

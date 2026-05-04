@@ -43,14 +43,9 @@ const bgMusic  = new Audio('Music/Title Music.mp3');
 bgMusic.loop   = true;
 bgMusic.volume = 0.05;
 
-function startMusic() {
-  bgMusic.play().catch(() => {
-    const resume = () => bgMusic.play().catch(() => {});
-    document.addEventListener('click',   resume, { once: true });
-    document.addEventListener('keydown', resume, { once: true });
-  });
-}
-startMusic();
+// Music starts when the player begins the game (inside a user gesture).
+// No autoplay attempt here — browsers block it anyway.
+let currentMusicSrc = ''; // tracks what's playing so we don't restart the same track
 
 // =============================================
 //  TILE IMAGES
@@ -126,23 +121,22 @@ const levels = [
       { x: 140, y: 230, w: 542, h: 18 }, // Gate 2: gap on LEFT  (18-140)
       { x: 0,   y: 130, w: 540, h: 18 }, // Gate 3: gap on RIGHT (540-682)
     ],
-    music: 'Music/Level 2 Music.mp3',
+    music: 'Music/Level 1 Music.mp3',
   },
   {
-    // Hole 3 — two widely-spaced C-shaped arc barriers.
-    // Arc 1 sits in the left quarter; Arc 2 sits in the right quarter.
-    // A ~100 px gap between their facing tips creates the main challenge gate.
+    // Hole 3 — Z-path with a moving wall in the mid-corridor.
+    // The moving wall slides left-right across the gap, so the player must
+    // time their shot to pass through when the opening is on their side.
     ballStart: { x: 60,  y: 440 },
     hole:      { x: 630, y: 60,  radius: 14 },
     walls: [
-      // Right-facing C — anchored to the left side, opens rightward
-      { type: 'arc', cx: 160, cy: 270, r: 150,
-        startAngle: -Math.PI * 0.65, endAngle: Math.PI * 0.65, thickness: 22 },
-      // Left-facing C — anchored to the right side, opens leftward
-      { type: 'arc', cx: 540, cy: 240, r: 140,
-        startAngle: Math.PI * 0.35, endAngle: Math.PI * 1.65, thickness: 22 },
+      { x: 0,   y: 330, w: 520, h: 18 }, // Gate 1: gap on RIGHT (520-682)
+      { x: 150, y: 165, w: 550, h: 18 }, // Gate 2: gap on LEFT  (18-150)
+      // Moving wall — slides across the mid-corridor, always leaving a gap on one side
+      { x: 175, y: 248, w: 350, h: 18,
+        moveAxis: 'x', moveMin: 18, moveMax: 332, moveSpeed: 1.5, moveDir: 1 },
     ],
-    music: 'Music/Level 3 Music.mp3',
+    music: 'Music/Level 1 Music.mp3',
   },
 ];
 
@@ -177,6 +171,7 @@ let isMoving = false;      // true while the ball is rolling
 let ballFrame     = 0;     // which sprite frame (0-2) is currently showing
 let ballFrameTick = 0;     // counts game ticks; frame advances every 6 ticks (~10fps)
 let tileGrid = [];         // 2D array of 'rough'|'fairway'|'green', built once per level
+let bgLayer  = null;       // offscreen canvas with pre-drawn background tiles (rebuilt per level)
 let hintDismissed = false; // hint hides permanently after the player's first ever shot
 
 // Aiming state — tracks the mouse drag
@@ -210,8 +205,10 @@ const PERIM        = 18;  // perimeter wall thickness — must match drawPerimet
 canvas.addEventListener("mousedown", onMouseDown);
 
 // Enter key starts the game from the title screen
+// S key skips the current hole (for testing)
 document.addEventListener("keydown", e => {
   if (e.key === "Enter" && gameState === "title") startGame();
+  if (e.key === "s" && gameState === "playing" && !gameWon) triggerWin();
 });
 // mousemove and mouseup are on window, not canvas — this means the drag
 // keeps working even when the cursor leaves the canvas boundary, so the
@@ -226,25 +223,31 @@ canvas.addEventListener("touchend",    e => { e.preventDefault(); onMouseUp(e.ch
 
 function getCanvasPos(event) {
   // Converts a page-level mouse/touch position to canvas-local coordinates.
-  // This is needed because the canvas may be offset from the top-left of the page.
+  // scaleX/Y account for CSS scaling (when the container shrinks to fit small screens).
   const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width  / rect.width;
+  const scaleY = canvas.height / rect.height;
   return {
-    x: event.clientX - rect.left,
-    y: event.clientY - rect.top,
+    x: (event.clientX - rect.left) * scaleX,
+    y: (event.clientY - rect.top)  * scaleY,
   };
 }
 
 function onMouseDown(event) {
   if (gameState === 'title') { startGame(); return; }
-  if (gameWon || isMoving) return; // ignore input while ball is rolling or game is over
-  aim.active = true;
-  // Always anchor the drag origin to the ball, not the click point.
-  // This keeps the aim line and the drag handle on opposite sides of the
-  // ball — the classic slingshot visual: pull back here, launches that way.
-  aim.startX = ball.x;
-  aim.startY = ball.y;
-  // Seed currentX/Y so the aim line appears immediately on mousedown.
+  if (gameWon || isMoving) return;
+
   const pos = getCanvasPos(event);
+
+  // Require the tap/click to start within 50px of the ball.
+  // Without this, tapping anywhere on the fairway would instantly fire a shot.
+  const dx = pos.x - ball.x;
+  const dy = pos.y - ball.y;
+  if (Math.sqrt(dx * dx + dy * dy) > 50) return;
+
+  aim.active = true;
+  aim.startX  = ball.x; // anchor drag origin to ball for slingshot feel
+  aim.startY  = ball.y;
   aim.currentX = pos.x;
   aim.currentY = pos.y;
 }
@@ -291,58 +294,62 @@ function onMouseUp(event) {
 function updateBall() {
   if (!isMoving) return;
 
-  // Move ball by its velocity
-  ball.x += ball.velX;
-  ball.y += ball.velY;
+  // Sub-stepping: split the move into small chunks so the ball can't tunnel
+  // through a wall in a single frame. Each step is at most ball.radius pixels,
+  // which is always smaller than the thinnest wall (18px).
+  const speed = Math.sqrt(ball.velX * ball.velX + ball.velY * ball.velY);
+  const steps = Math.max(1, Math.ceil(speed / ball.radius));
+  const sx = ball.velX / steps;
+  const sy = ball.velY / steps;
 
-  // Apply friction based on the surface tile the ball is currently on.
+  for (let i = 0; i < steps; i++) {
+    ball.x += sx;
+    ball.y += sy;
+
+    // Bounce off the perimeter wall
+    if (ball.x - ball.radius < PERIM) {
+      ball.x = PERIM + ball.radius;
+      ball.velX = Math.abs(ball.velX);
+      playBounceSound();
+    }
+    if (ball.x + ball.radius > canvas.width - PERIM) {
+      ball.x = canvas.width - PERIM - ball.radius;
+      ball.velX = -Math.abs(ball.velX);
+      playBounceSound();
+    }
+    if (ball.y - ball.radius < PERIM) {
+      ball.y = PERIM + ball.radius;
+      ball.velY = Math.abs(ball.velY);
+      playBounceSound();
+    }
+    if (ball.y + ball.radius > canvas.height - PERIM) {
+      ball.y = canvas.height - PERIM - ball.radius;
+      ball.velY = -Math.abs(ball.velY);
+      playBounceSound();
+    }
+
+    // Bounce off inner walls
+    for (const wall of WALLS) {
+      resolveWallCollision(ball, wall);
+    }
+  }
+
+  // Friction is applied once per frame (not per sub-step) based on current tile.
   const tileCol  = Math.floor(ball.x / TILE_SIZE);
   const tileRow  = Math.floor(ball.y / TILE_SIZE);
   const surface  = (tileGrid[tileRow] && tileGrid[tileRow][tileCol]) || 'fairway';
-  const friction = FRICTION[surface];
-  ball.velX *= friction;
-  ball.velY *= friction;
-
-  // Bounce off the perimeter wall (inner edge = PERIM px from each canvas side)
-  if (ball.x - ball.radius < PERIM) {
-    ball.x = PERIM + ball.radius;
-    ball.velX = Math.abs(ball.velX);
-    playBounceSound();
-  }
-  if (ball.x + ball.radius > canvas.width - PERIM) {
-    ball.x = canvas.width - PERIM - ball.radius;
-    ball.velX = -Math.abs(ball.velX);
-    playBounceSound();
-  }
-  if (ball.y - ball.radius < PERIM) {
-    ball.y = PERIM + ball.radius;
-    ball.velY = Math.abs(ball.velY);
-    playBounceSound();
-  }
-  if (ball.y + ball.radius > canvas.height - PERIM) {
-    ball.y = canvas.height - PERIM - ball.radius;
-    ball.velY = -Math.abs(ball.velY);
-    playBounceSound();
-  }
-
-  // Bounce off walls
-  for (const wall of WALLS) {
-    resolveWallCollision(ball, wall);
-  }
+  ball.velX *= FRICTION[surface];
+  ball.velY *= FRICTION[surface];
 
   // Check if the ball has nearly stopped
-  const speed = Math.sqrt(ball.velX * ball.velX + ball.velY * ball.velY);
   if (speed < MIN_SPEED) {
     ball.velX = 0;
     ball.velY = 0;
     isMoving = false;
-    canvas.classList.remove("ball-rolling"); // cursor → crosshair, ready to shoot
+    canvas.classList.remove("ball-rolling");
   }
 
-  // Check win condition — ball center reaches the edge of the hole circle.
-  // Using HOLE.radius (not HOLE.radius + something) means the ball must
-  // visually enter the hole before the win fires. No position snap — the
-  // ball already looks inside the hole at this distance.
+  // Check win condition
   const distToHole = Math.sqrt(
     (ball.x - HOLE.x) * (ball.x - HOLE.x) +
     (ball.y - HOLE.y) * (ball.y - HOLE.y)
@@ -464,6 +471,22 @@ function buildTileGrid() {
       tileGrid[row][col] = classifyTile(col, row, cx, cy);
     }
   }
+
+  // Bake all tiles into a single offscreen canvas so draw() only needs
+  // one drawImage call instead of ~350 every frame — big mobile perf win.
+  bgLayer = document.createElement('canvas');
+  bgLayer.width  = canvas.width;
+  bgLayer.height = canvas.height;
+  const bgCtx = bgLayer.getContext('2d');
+  for (let row = 0; row < tileGrid.length; row++) {
+    for (let col = 0; col < tileGrid[row].length; col++) {
+      const type = tileGrid[row][col];
+      const img  = type === 'rough' ? imgRough
+                 : type === 'green' ? imgGreen
+                 :                    imgFairway;
+      bgCtx.drawImage(img, col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+    }
+  }
 }
 
 function classifyTile(col, row, cx, cy) {
@@ -526,17 +549,8 @@ function draw() {
 }
 
 function drawBackground() {
-  // Stamp each pre-classified tile with the matching texture image.
-  // The grid was built once at load time so no distance checks happen here.
-  for (let row = 0; row < tileGrid.length; row++) {
-    for (let col = 0; col < tileGrid[row].length; col++) {
-      const type = tileGrid[row][col];
-      const img  = type === 'rough' ? imgRough
-                 : type === 'green' ? imgGreen
-                 :                    imgFairway;
-      ctx.drawImage(img, col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-    }
-  }
+  // Single drawImage from the pre-baked offscreen canvas — replaces ~350 calls per frame.
+  if (bgLayer) ctx.drawImage(bgLayer, 0, 0);
 }
 
 function drawHole() {
@@ -804,22 +818,14 @@ function drawTitleScreen() {
 function startGame() {
   gameState = 'playing';
   document.getElementById('ui-bar').style.visibility = 'visible';
-  // Load level data but don't swap music yet — this lets the title music
-  // actually start (the browser's autoplay resume fires on the same keydown/click
-  // that calls startGame, so swapping src immediately would silence it).
-  loadLevel(0, true);
-  // Switch to Level 1 music after a short delay so the title music is audible.
-  setTimeout(() => {
-    bgMusic.src = levels[0].music;
-    bgMusic.load();
-    bgMusic.play().catch(() => {});
-  }, 800);
+  loadLevel(0);
 }
 
 function gameLoop() {
   if (gameState === 'title') {
     drawTitleScreen();
   } else {
+    updateMovingWalls();
     updateBall();
 
     if (isMoving) {
@@ -840,6 +846,26 @@ function gameLoop() {
 }
 
 // =============================================
+//  MOVING WALLS — called every frame
+// =============================================
+
+function updateMovingWalls() {
+  for (const wall of WALLS) {
+    if (!wall.moveAxis) continue; // skip static walls
+
+    if (wall.moveAxis === 'x') {
+      wall.x += wall.moveSpeed * wall.moveDir;
+      if (wall.x <= wall.moveMin) { wall.x = wall.moveMin; wall.moveDir =  1; }
+      if (wall.x >= wall.moveMax) { wall.x = wall.moveMax; wall.moveDir = -1; }
+    } else {
+      wall.y += wall.moveSpeed * wall.moveDir;
+      if (wall.y <= wall.moveMin) { wall.y = wall.moveMin; wall.moveDir =  1; }
+      if (wall.y >= wall.moveMax) { wall.y = wall.moveMax; wall.moveDir = -1; }
+    }
+  }
+}
+
+// =============================================
 //  WIN / RESET
 // =============================================
 
@@ -857,7 +883,7 @@ function nextLevel() {
   loadLevel(currentLevel);
 }
 
-function loadLevel(index, keepMusic = false) {
+function loadLevel(index) {
   const level = levels[index];
 
   // Update active level data
@@ -866,7 +892,8 @@ function loadLevel(index, keepMusic = false) {
   HOLE.radius = level.hole.radius;
 
   WALLS.length = 0;
-  level.walls.forEach(w => WALLS.push(w));
+  // Spread-copy each wall so moving wall positions don't mutate the source data on reset.
+  level.walls.forEach(w => WALLS.push({ ...w }));
 
   BALL_START.x = level.ballStart.x;
   BALL_START.y = level.ballStart.y;
@@ -874,8 +901,9 @@ function loadLevel(index, keepMusic = false) {
   // Rebuild tile grid so the green zone moves to the new hole position
   buildTileGrid();
 
-  // Switch music track (skipped when keepMusic is true, e.g. on initial game start)
-  if (!keepMusic) {
+  // Only swap the track if it's actually changing — keeps music continuous between holes.
+  if (level.music !== currentMusicSrc) {
+    currentMusicSrc = level.music;
     bgMusic.src = level.music;
     bgMusic.load();
     bgMusic.play().catch(() => {});
@@ -907,6 +935,21 @@ function resetGame() {
 function updateShotCounter() {
   shotCounterEl.textContent = `Shots: ${shots}`;
 }
+
+// =============================================
+//  RESPONSIVE SCALING
+//  Shrinks the whole game container to fit narrow screens (phones).
+//  Uses CSS transform so the win screen and UI bar scale with it.
+//  getCanvasPos() already accounts for the scale via getBoundingClientRect().
+// =============================================
+
+function fitToScreen() {
+  // 716 = 700px canvas + a small breathing margin
+  const scale = Math.min(1, window.innerWidth / 716);
+  document.getElementById('game-container').style.transform = `scale(${scale})`;
+}
+window.addEventListener('resize', fitToScreen);
+fitToScreen();
 
 // =============================================
 //  START

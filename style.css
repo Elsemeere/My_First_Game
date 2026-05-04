@@ -13,10 +13,12 @@ body {
   background-color: #1a1a2e;
   display: flex;
   justify-content: center;
-  align-items: center;
+  align-items: flex-start;
+  padding-top: 10px;
   min-height: 100vh;
   font-family: Arial, sans-serif;
   color: #eee;
+  overflow: hidden; /* prevent scroll on mobile when container is scaled */
 }
 
 /* Wrapper that holds the UI bar, canvas, and win screen together */
@@ -25,6 +27,7 @@ body {
   flex-direction: column;
   align-items: center;
   gap: 8px;
+  transform-origin: top center; /* JS scales this down on small screens */
 }
 
 /* Top bar with title, shot counter, and reset button */
