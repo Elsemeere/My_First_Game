@@ -10,9 +10,10 @@
 
   <div id="game-container">
 
-    <!-- Top bar: title and shot counter -->
+    <!-- Top bar: title, hole indicator, shot counter, and reset button -->
     <div id="ui-bar">
       <span id="title-label">Maze Golf</span>
+      <span id="level-label">Hole 1</span>
       <span id="shot-counter">Shots: 0</span>
       <button id="reset-btn">Reset</button>
     </div>
@@ -23,8 +24,12 @@
     <!-- Win screen shown on top of the canvas when the ball reaches the hole -->
     <div id="win-screen" class="hidden">
       <div id="win-box">
-        <h2>Hole in <span id="win-shots">?</span> shots!</h2>
-        <button id="play-again-btn">Play Again</button>
+        <h2 id="win-title">Hole Complete!</h2>
+        <p id="win-shots-line">Finished in <span id="win-shots">?</span> shots</p>
+        <div id="win-buttons">
+          <button id="next-hole-btn">Next Hole →</button>
+          <button id="play-again-btn">Restart Hole</button>
+        </div>
       </div>
     </div>
 

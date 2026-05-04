@@ -1,0 +1,5 @@
+# Claude Code memory — local only, not part of the game
+.claude/
+
+# Backup files
+*.bak

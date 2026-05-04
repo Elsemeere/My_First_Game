@@ -8,8 +8,8 @@ Ideas for future versions, roughly ordered from easiest to hardest. Don't implem
 
 - [x] **Golf course visual theme** — green fairway + rough border, mown stripes, stone-bevelled walls, radial-gradient ball, turf shadow around hole, cream flag pole, yellow-to-red aim line
 - [x] **Tile-based background** — fairway, rough, and green tiles; rough borders canvas edges (1–3 tiles, organically varied) and walls (1–2 tiles); green surrounds the hole
-- [ ] **Per-tile friction** — rough slows the ball more than fairway; green is fastest. Tile type at ball position already available via `tileGrid`; just adjust `FRICTION` multiplier per frame based on current tile
-- [ ] **Multiple levels** — add a `levels` array and a "Next Level" button on the win screen
+- [x] **Per-tile friction** — rough slows the ball more than fairway; green is fastest. Tile type at ball position already available via `tileGrid`; just adjust `FRICTION` multiplier per frame based on current tile
+- [x] **Multiple levels** — add a `levels` array and a "Next Level" button on the win screen
 - [ ] **Par system** — define a par score per level; show "2 under par!" on the win screen
 - [ ] **Best score memory** — use `localStorage` to remember the player's best shot count per level
 - [ ] **Ball colour picker** — let the player choose the ball colour before playing
@@ -22,6 +22,7 @@ Ideas for future versions, roughly ordered from easiest to hardest. Don't implem
 - [ ] **Dotted preview path** — show a few predicted bounce points before releasing (requires reflection math)
 - [ ] **Scoring screen** — cumulative score across all levels, shown after the final level
 - [ ] **Smooth camera pan** — if levels get bigger than the canvas, pan the view to follow the ball
+- [X] **Add Golf Rolling Animation** - provides more aethestic look to ball rolling.
 
 ## Harder features
 

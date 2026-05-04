@@ -8,25 +8,49 @@ const canvas = document.getElementById("game-canvas");
 const ctx = canvas.getContext("2d"); // ctx is the drawing "pen" for the canvas
 
 // --- UI elements ---
-const shotCounterEl = document.getElementById("shot-counter");
-const winScreen = document.getElementById("win-screen");
-const winShotsEl = document.getElementById("win-shots");
+const shotCounterEl  = document.getElementById("shot-counter");
+const levelLabelEl   = document.getElementById("level-label");
+const winScreen      = document.getElementById("win-screen");
+const winShotsEl     = document.getElementById("win-shots");
+const winTitleEl     = document.getElementById("win-title");
+const nextHoleBtn    = document.getElementById("next-hole-btn");
 document.getElementById("reset-btn").addEventListener("click", resetGame);
 document.getElementById("play-again-btn").addEventListener("click", resetGame);
+nextHoleBtn.addEventListener("click", nextLevel);
 
 // =============================================
 //  AUDIO
 //  new Audio() works with local file:// URLs; fetch()-based Web Audio does not.
 //  currentTime = 0 rewinds before each play so rapid shots don't get cut off.
 // =============================================
-const hitSound = new Audio('Sound Effects/Ball Hit on Fairway.wav');
+const hitSound    = new Audio('Sound Effects/Ball Hit on Fairway.wav');
+const bounceSound = new Audio('Sound Effects/Metal Wall Bounce.wav');
 
 function playHitSound() {
-  // Skip the silent lead-in at the start of the file.
-  // Adjust this number (in seconds) if the sound still feels early or late.
   hitSound.currentTime = 0.0;
   hitSound.play().catch(() => {});
 }
+
+function playBounceSound() {
+  bounceSound.currentTime = 0.0;
+  bounceSound.play().catch(() => {});
+}
+
+// Background music — loops at low volume.
+// Starts on title screen; loadLevel() swaps the src for each hole.
+// Autoplay is blocked until first user interaction, so we retry on click or keydown.
+const bgMusic  = new Audio('Music/Title Music.mp3');
+bgMusic.loop   = true;
+bgMusic.volume = 0.05;
+
+function startMusic() {
+  bgMusic.play().catch(() => {
+    const resume = () => bgMusic.play().catch(() => {});
+    document.addEventListener('click',   resume, { once: true });
+    document.addEventListener('keydown', resume, { once: true });
+  });
+}
+startMusic();
 
 // =============================================
 //  TILE IMAGES
@@ -40,7 +64,8 @@ let tilesLoaded = 0;
 function onTileLoaded() {
   tilesLoaded++;
   if (tilesLoaded === 3) {
-    buildTileGrid(); // classify every canvas cell before the first draw
+    // Tile assets ready — start the game loop in title-screen mode.
+    // loadLevel(0) is called only when the player presses Enter / clicks Start.
     gameLoop();
   }
 }
@@ -52,60 +77,107 @@ imgFairway.src = 'Graphic Assets/Tiles/Fairway Tile.png';
 imgRough.src   = 'Graphic Assets/Tiles/Rough Tile.png';
 imgGreen.src   = 'Graphic Assets/Tiles/Green Tile.png';
 
+// Wall tile images — horizontal and vertical variants.
+const imgHorzWall = new Image();
+const imgVertWall = new Image();
+imgHorzWall.src = 'Graphic Assets/Tiles/Horz_Wall-removebg-preview.png';
+imgVertWall.src = 'Graphic Assets/Tiles/Vert_Wall-removebg-preview.png';
+
+// Starting zone marker — drawn centered on the ball's start position.
+const imgStartZone = new Image();
+imgStartZone.src = 'Graphic Assets/Tiles/Start Zone.png';
+
+// Title screen animation frames — cycled on the title screen before the game starts.
+const imgTitle = [];
+for (let i = 1; i <= 5; i++) {
+  const img = new Image();
+  img.src = `Graphic Assets/Title Screen/Title ${i}.png`;
+  imgTitle.push(img);
+}
+
+// Ball roll sprites — 3 frames cycled while the ball is moving.
+// Images already have transparent backgrounds so they can be drawn directly.
+const imgBallRoll = [new Image(), new Image(), new Image()];
+imgBallRoll[0].src = 'Graphic Assets/Golf Ball/Ball_Roll_1.png';
+imgBallRoll[1].src = 'Graphic Assets/Golf Ball/Ball_Roll_2.png';
+imgBallRoll[2].src = 'Graphic Assets/Golf Ball/Ball_Roll_3.png';
+
 // =============================================
 //  LEVEL DATA
-//  Each wall is a rectangle: { x, y, w, h }
-//  x/y = top-left corner, w = width, h = height
+//  Each level defines walls, hole, ball start, and music track.
 // =============================================
-const WALLS = [
-  // Gate 1 — left edge to x=560, gap on RIGHT (x=560-700)
-  // Ball starts bottom-left and must travel RIGHT to pass through
-  { x: 0,   y: 325, w: 560, h: 18 },
-
-  // Gate 2 — x=140 to right edge, gap on LEFT (x=0-140)
-  // After crossing Gate 1, ball must travel LEFT to pass through
-  { x: 140, y: 168, w: 560, h: 18 },
-
-  // Top blocker — canvas top down to near Gate 2, gap at bottom (y=128-168)
-  // Ball must skim the bottom of the top section to reach the hole
-  { x: 380, y: 0,   w: 18,  h: 128 },
-
-  // Middle obstacle — floating blocker in the middle corridor
-  // Adds a detour between the two gates; passable above (34px) or below (30px)
-  { x: 310, y: 220, w: 18,  h: 75  },
+const levels = [
+  {
+    // Hole 1 — Z-path: ball bottom-left, hole top-right
+    ballStart: { x: 60,  y: 440 },
+    hole:      { x: 630, y: 60,  radius: 14 },
+    walls: [
+      { x: 0,   y: 325, w: 560, h: 18 }, // Gate 1: gap on RIGHT
+      { x: 140, y: 168, w: 560, h: 18 }, // Gate 2: gap on LEFT
+    ],
+    music: 'Music/Level 1 Music.mp3',
+  },
+  {
+    // Hole 2 — S-path: ball bottom-right, hole top-left, three gates
+    ballStart: { x: 640, y: 440 },
+    hole:      { x: 60,  y: 60,  radius: 14 },
+    walls: [
+      { x: 0,   y: 340, w: 540, h: 18 }, // Gate 1: gap on RIGHT (540-682)
+      { x: 140, y: 230, w: 542, h: 18 }, // Gate 2: gap on LEFT  (18-140)
+      { x: 0,   y: 130, w: 540, h: 18 }, // Gate 3: gap on RIGHT (540-682)
+    ],
+    music: 'Music/Level 2 Music.mp3',
+  },
+  {
+    // Hole 3 — two widely-spaced C-shaped arc barriers.
+    // Arc 1 sits in the left quarter; Arc 2 sits in the right quarter.
+    // A ~100 px gap between their facing tips creates the main challenge gate.
+    ballStart: { x: 60,  y: 440 },
+    hole:      { x: 630, y: 60,  radius: 14 },
+    walls: [
+      // Right-facing C — anchored to the left side, opens rightward
+      { type: 'arc', cx: 160, cy: 270, r: 150,
+        startAngle: -Math.PI * 0.65, endAngle: Math.PI * 0.65, thickness: 22 },
+      // Left-facing C — anchored to the right side, opens leftward
+      { type: 'arc', cx: 540, cy: 240, r: 140,
+        startAngle: Math.PI * 0.35, endAngle: Math.PI * 1.65, thickness: 22 },
+    ],
+    music: 'Music/Level 3 Music.mp3',
+  },
 ];
 
 // =============================================
 //  GAME OBJECTS
+//  Initialised from levels[0]; loadLevel() updates these each hole.
 // =============================================
 
-// The hole — a circle the ball must reach
-const HOLE = {
-  x: 630,  // center x
-  y: 60,   // center y
-  radius: 14,
-};
+const HOLE      = { x: 630, y: 60, radius: 14 };
+const WALLS     = [];
+const BALL_START = { x: 60, y: 440 };
 
-// The ball — starts near the bottom-left
-// vel = velocity (how fast it moves each frame)
+// The ball — starts at BALL_START; vel = velocity per frame
 const ball = {
-  x: 60,
-  y: 440,
+  x: BALL_START.x,
+  y: BALL_START.y,
   radius: 10,
   velX: 0,
   velY: 0,
 };
 
-// Starting position so reset() can restore it
-const BALL_START = { x: ball.x, y: ball.y };
-
 // =============================================
 //  GAME STATE
 // =============================================
-let shots = 0;          // how many times the player has fired
-let gameWon = false;    // true once the ball reaches the hole
-let isMoving = false;   // true while the ball is rolling
-let tileGrid = [];      // 2D array of 'rough'|'fairway'|'green', built once on load
+let gameState     = 'title'; // 'title' until the player presses Enter, then 'playing'
+let titleFrame    = 0;       // which title image is currently showing (0-4)
+let titleFrameTick = 0;      // tick counter for the title animation
+let currentLevel  = 0;       // index into the levels array
+let shots = 0;               // how many times the player has fired this hole
+let gameWon = false;       // true once the ball reaches the hole
+let isMoving = false;      // true while the ball is rolling
+let ballFrame     = 0;     // which sprite frame (0-2) is currently showing
+let ballFrameTick = 0;     // counts game ticks; frame advances every 6 ticks (~10fps)
+let tileGrid = [];         // 2D array of 'rough'|'fairway'|'green', built once per level
+let hintDismissed = false; // hint hides permanently after the player's first ever shot
 
 // Aiming state — tracks the mouse drag
 const aim = {
@@ -115,7 +187,13 @@ const aim = {
 };
 
 // Physics constants
-const FRICTION = 0.985;      // multiply velocity by this each frame (1.0 = no friction, 0.0 = stops instantly)
+// Friction per surface type — applied every frame while the ball rolls.
+// Values closer to 1.0 mean less slowdown (faster surface).
+const FRICTION = {
+  rough:   0.970,  // thick grass — ball slows noticeably
+  fairway: 0.985,  // mown fairway — normal speed
+  green:   0.992,  // putting green — ball runs fast and far
+};
 const MIN_SPEED = 0.15;      // below this speed the ball is considered stopped
 const MAX_POWER = 180;       // maximum drag distance (in pixels) — caps shot power
 const POWER_SCALE = 0.12;    // converts drag pixels to velocity units
@@ -123,12 +201,18 @@ const POWER_SCALE = 0.12;    // converts drag pixels to velocity units
 // Tile constants
 const TILE_SIZE    = 32;  // canvas pixels per background tile
 const GREEN_RADIUS = 65;  // pixel radius of the putting green around the hole
+const PERIM        = 18;  // perimeter wall thickness — must match drawPerimeterWall()
 
 // =============================================
 //  INPUT — Mouse events for aiming
 // =============================================
 
 canvas.addEventListener("mousedown", onMouseDown);
+
+// Enter key starts the game from the title screen
+document.addEventListener("keydown", e => {
+  if (e.key === "Enter" && gameState === "title") startGame();
+});
 // mousemove and mouseup are on window, not canvas — this means the drag
 // keeps working even when the cursor leaves the canvas boundary, so the
 // player can pull back to full power from any ball position.
@@ -151,6 +235,7 @@ function getCanvasPos(event) {
 }
 
 function onMouseDown(event) {
+  if (gameState === 'title') { startGame(); return; }
   if (gameWon || isMoving) return; // ignore input while ball is rolling or game is over
   aim.active = true;
   // Always anchor the drag origin to the ball, not the click point.
@@ -192,6 +277,7 @@ function onMouseUp(event) {
   ball.velY = -(dy / distance) * power * POWER_SCALE;
 
   shots++;
+  hintDismissed = true;
   isMoving = true;
   canvas.classList.add("ball-rolling"); // cursor → not-allowed while ball moves
   playHitSound();
@@ -209,26 +295,34 @@ function updateBall() {
   ball.x += ball.velX;
   ball.y += ball.velY;
 
-  // Apply friction — slows the ball down a little each frame
-  ball.velX *= FRICTION;
-  ball.velY *= FRICTION;
+  // Apply friction based on the surface tile the ball is currently on.
+  const tileCol  = Math.floor(ball.x / TILE_SIZE);
+  const tileRow  = Math.floor(ball.y / TILE_SIZE);
+  const surface  = (tileGrid[tileRow] && tileGrid[tileRow][tileCol]) || 'fairway';
+  const friction = FRICTION[surface];
+  ball.velX *= friction;
+  ball.velY *= friction;
 
-  // Bounce off canvas edges
-  if (ball.x - ball.radius < 0) {
-    ball.x = ball.radius;
-    ball.velX = Math.abs(ball.velX); // reverse horizontal direction
+  // Bounce off the perimeter wall (inner edge = PERIM px from each canvas side)
+  if (ball.x - ball.radius < PERIM) {
+    ball.x = PERIM + ball.radius;
+    ball.velX = Math.abs(ball.velX);
+    playBounceSound();
   }
-  if (ball.x + ball.radius > canvas.width) {
-    ball.x = canvas.width - ball.radius;
+  if (ball.x + ball.radius > canvas.width - PERIM) {
+    ball.x = canvas.width - PERIM - ball.radius;
     ball.velX = -Math.abs(ball.velX);
+    playBounceSound();
   }
-  if (ball.y - ball.radius < 0) {
-    ball.y = ball.radius;
-    ball.velY = Math.abs(ball.velY); // reverse vertical direction
+  if (ball.y - ball.radius < PERIM) {
+    ball.y = PERIM + ball.radius;
+    ball.velY = Math.abs(ball.velY);
+    playBounceSound();
   }
-  if (ball.y + ball.radius > canvas.height) {
-    ball.y = canvas.height - ball.radius;
+  if (ball.y + ball.radius > canvas.height - PERIM) {
+    ball.y = canvas.height - PERIM - ball.radius;
     ball.velY = -Math.abs(ball.velY);
+    playBounceSound();
   }
 
   // Bounce off walls
@@ -264,12 +358,18 @@ function updateBall() {
 
 // =============================================
 //  WALL COLLISION
-//  Axis-Aligned Bounding Box (AABB) vs circle.
-//  Figures out which side the ball hit and
-//  reverses the correct velocity component.
+//  Dispatches to rect or arc collision based on wall type.
 // =============================================
 function resolveWallCollision(ball, wall) {
-  // Find the closest point on the wall rectangle to the ball's center
+  if (wall.type === 'arc') {
+    resolveArcWallCollision(ball, wall);
+  } else {
+    resolveRectWallCollision(ball, wall);
+  }
+}
+
+// Rectangle collision — Axis-Aligned Bounding Box (AABB) vs circle.
+function resolveRectWallCollision(ball, wall) {
   const closestX = Math.max(wall.x, Math.min(ball.x, wall.x + wall.w));
   const closestY = Math.max(wall.y, Math.min(ball.y, wall.y + wall.h));
 
@@ -277,29 +377,71 @@ function resolveWallCollision(ball, wall) {
   const distY = ball.y - closestY;
   const distance = Math.sqrt(distX * distX + distY * distY);
 
-  if (distance >= ball.radius) return; // no collision
+  if (distance >= ball.radius) return;
 
-  // Overlap amount — push the ball out by this much
   const overlap = ball.radius - distance;
 
   if (distance === 0) {
-    // Ball center is exactly inside the wall (rare edge case) — push upward
     ball.y -= ball.radius;
     ball.velY = -Math.abs(ball.velY);
     return;
   }
 
-  // Normalise direction to push ball out of the wall
   const nx = distX / distance;
   const ny = distY / distance;
-
   ball.x += nx * overlap;
   ball.y += ny * overlap;
 
-  // Reflect velocity along the collision normal
   const dot = ball.velX * nx + ball.velY * ny;
   ball.velX -= 2 * dot * nx;
   ball.velY -= 2 * dot * ny;
+  playBounceSound();
+}
+
+// Arc (curved) wall collision — circle vs thick circular arc.
+// The arc is treated as a curved stripe centred at radius r from (cx, cy).
+function resolveArcWallCollision(ball, wall) {
+  const { cx, cy, r, startAngle, endAngle, thickness } = wall;
+  const span         = endAngle - startAngle; // angular width of the arc (> 0)
+  const collisionDist = ball.radius + thickness / 2;
+
+  // Ball's angle from the arc centre, in [-π, π]
+  const ballAngle = Math.atan2(ball.y - cy, ball.x - cx);
+
+  // Clockwise angular distance from startAngle to ballAngle, normalised to [0, 2π)
+  const relAngle = ((ballAngle - startAngle) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
+
+  // Closest angle on the arc to the ball
+  let closestAngle;
+  if (relAngle <= span) {
+    closestAngle = ballAngle; // ball is within the arc's angular sweep
+  } else {
+    // Ball is outside the sweep — pick the nearer endpoint
+    const distToEnd   = relAngle - span;
+    const distToStart = 2 * Math.PI - relAngle;
+    closestAngle = distToEnd < distToStart ? endAngle : startAngle;
+  }
+
+  // Closest point on the arc centreline
+  const px = cx + r * Math.cos(closestAngle);
+  const py = cy + r * Math.sin(closestAngle);
+
+  const dx = ball.x - px;
+  const dy = ball.y - py;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+
+  if (dist >= collisionDist || dist === 0) return;
+
+  // Push the ball out and reflect its velocity
+  const nx = dx / dist;
+  const ny = dy / dist;
+  ball.x += nx * (collisionDist - dist);
+  ball.y += ny * (collisionDist - dist);
+
+  const dot = ball.velX * nx + ball.velY * ny;
+  ball.velX -= 2 * dot * nx;
+  ball.velY -= 2 * dot * ny;
+  playBounceSound();
 }
 
 // =============================================
@@ -367,17 +509,18 @@ function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   drawBackground();
-  drawHole();
+  drawStartZone();   // drawn before perimeter so border covers any edge overflow
+  drawPerimeterWall();
   drawWalls();
+  drawHole();
   drawBall();
 
   if (aim.active && aim.currentX !== undefined) {
     drawAimLine();
   }
 
-  // Show a one-time hint before the first shot so players know how to aim.
-  // Disappears after shots > 0 so it never gets in the way.
-  if (!gameWon && shots === 0 && !isMoving) {
+  // Show the hint until the player fires their very first shot ever.
+  if (!gameWon && !hintDismissed && !isMoving) {
     drawHint();
   }
 }
@@ -428,41 +571,158 @@ function drawHole() {
 
 function drawWalls() {
   for (const wall of WALLS) {
-    // Main stone fill
-    ctx.fillStyle = "#9e9e8e";
-    ctx.fillRect(wall.x, wall.y, wall.w, wall.h);
-
-    // Top highlight — catches the light, makes the wall feel solid
-    ctx.fillStyle = "#c8c8b4";
-    ctx.fillRect(wall.x, wall.y, wall.w, 3);
-
-    // Left highlight
-    ctx.fillStyle = "#b4b4a0";
-    ctx.fillRect(wall.x, wall.y + 3, 3, wall.h - 3);
-
-    // Bottom shadow
-    ctx.fillStyle = "#6a6a5a";
-    ctx.fillRect(wall.x, wall.y + wall.h - 3, wall.w, 3);
-
-    // Right shadow
-    ctx.fillRect(wall.x + wall.w - 3, wall.y, 3, wall.h);
+    if (wall.type === 'arc') {
+      drawArcWall(wall);
+    } else {
+      drawRectWall(wall);
+    }
   }
 }
 
-function drawBall() {
-  // Radial gradient: bright highlight top-left fading to gray at the edges.
-  // This makes the flat circle read as a 3D sphere under a light source.
-  const gradient = ctx.createRadialGradient(
-    ball.x - 3, ball.y - 3, 1,        // small highlight circle, offset top-left
-    ball.x,     ball.y,     ball.radius // full ball circle
-  );
-  gradient.addColorStop(0, "#ffffff"); // bright white at the highlight
-  gradient.addColorStop(1, "#a0a0a0"); // mid-gray at the shadowed edge
+function drawRectWall(wall) {
+  const isHorz = wall.w >= wall.h;
 
+  ctx.fillStyle = '#9a6828';
+  ctx.fillRect(wall.x, wall.y, wall.w, wall.h);
+
+  ctx.strokeStyle = 'rgba(0,0,0,0.09)';
+  ctx.lineWidth = 1;
+  if (isHorz) {
+    for (let i = 3; i < wall.h - 2; i += 3) {
+      ctx.beginPath();
+      ctx.moveTo(wall.x, wall.y + i);
+      ctx.lineTo(wall.x + wall.w, wall.y + i);
+      ctx.stroke();
+    }
+  } else {
+    for (let i = 3; i < wall.w - 2; i += 3) {
+      ctx.beginPath();
+      ctx.moveTo(wall.x + i, wall.y);
+      ctx.lineTo(wall.x + i, wall.y + wall.h);
+      ctx.stroke();
+    }
+  }
+
+  ctx.fillStyle = 'rgba(255,210,130,0.4)';
+  if (isHorz) ctx.fillRect(wall.x, wall.y, wall.w, 2);
+  else        ctx.fillRect(wall.x, wall.y, 2, wall.h);
+
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  if (isHorz) ctx.fillRect(wall.x, wall.y + wall.h - 2, wall.w, 2);
+  else        ctx.fillRect(wall.x + wall.w - 2, wall.y, 2, wall.h);
+}
+
+function drawArcWall(wall) {
+  const { cx, cy, r, startAngle, endAngle, thickness } = wall;
+
+  // Main wood fill — a thick arc stroke
   ctx.beginPath();
-  ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
-  ctx.fillStyle = gradient;
-  ctx.fill();
+  ctx.arc(cx, cy, r, startAngle, endAngle);
+  ctx.strokeStyle = '#9a6828';
+  ctx.lineWidth   = thickness;
+  ctx.lineCap     = 'round';
+  ctx.stroke();
+
+  // Concentric grain lines along the arc (same feel as the rect walls)
+  ctx.strokeStyle = 'rgba(0,0,0,0.09)';
+  ctx.lineWidth   = 1;
+  ctx.lineCap     = 'butt';
+  for (let offset = -Math.floor(thickness / 2) + 3; offset < thickness / 2 - 2; offset += 3) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, r + offset, startAngle, endAngle);
+    ctx.stroke();
+  }
+
+  // Bright shimmer on the outer edge
+  ctx.beginPath();
+  ctx.arc(cx, cy, r - thickness / 2 + 1, startAngle, endAngle);
+  ctx.strokeStyle = 'rgba(255,210,130,0.4)';
+  ctx.lineWidth   = 2;
+  ctx.lineCap     = 'round';
+  ctx.stroke();
+
+  // Dark shadow on the inner edge
+  ctx.beginPath();
+  ctx.arc(cx, cy, r + thickness / 2 - 1, startAngle, endAngle);
+  ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+  ctx.lineWidth   = 2;
+  ctx.stroke();
+}
+
+function drawStartZone() {
+  if (!imgStartZone.complete || imgStartZone.naturalWidth === 0) return;
+  // 3× the visual ball diameter so the marker is clearly visible
+  const size = (ball.radius + 10) * 2 * 3; // = 120 px
+  ctx.drawImage(
+    imgStartZone,
+    BALL_START.x - size / 2,
+    BALL_START.y - size / 2,
+    size, size
+  );
+}
+
+function drawPerimeterWall() {
+  const t = PERIM;
+  const w = canvas.width;
+  const h = canvas.height;
+
+  // Draw the border as one single frame-shaped path using the even-odd fill rule.
+  // The inner rect punches a hole in the outer rect, giving perfect mitered corners
+  // with absolutely no seams or overlaps.
+  ctx.beginPath();
+  ctx.rect(0, 0, w, h);           // outer boundary
+  ctx.rect(t, t, w - t*2, h - t*2); // inner cutout
+  ctx.fillStyle = '#9a6828';
+  ctx.fill('evenodd');
+
+  // Horizontal wood grain lines on top and bottom strips
+  ctx.strokeStyle = 'rgba(0,0,0,0.09)';
+  ctx.lineWidth = 1;
+  for (let i = 3; i < t - 2; i += 3) {
+    ctx.beginPath();
+    ctx.moveTo(0, i);       ctx.lineTo(w, i);           // top strip
+    ctx.moveTo(0, h-t+i);   ctx.lineTo(w, h-t+i);       // bottom strip
+    ctx.stroke();
+  }
+  // Vertical grain on left and right strips
+  for (let i = 3; i < t - 2; i += 3) {
+    ctx.beginPath();
+    ctx.moveTo(i, t);       ctx.lineTo(i, h-t);          // left strip
+    ctx.moveTo(w-t+i, t);   ctx.lineTo(w-t+i, h-t);     // right strip
+    ctx.stroke();
+  }
+
+  // Bright outer rim (light catching the top surface)
+  ctx.strokeStyle = 'rgba(255,210,130,0.4)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(1, 1, w-2, h-2);
+
+  // Dark inner rim (shadow where the wall drops to the fairway)
+  ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(t, t, w - t*2, h - t*2);
+}
+
+function drawBall() {
+  const img        = imgBallRoll[ballFrame];
+  const drawRadius = ball.radius + 10; // visually larger than physics radius
+  const size       = drawRadius * 2;
+
+  if (img.complete && img.naturalWidth > 0) {
+    ctx.drawImage(img, ball.x - drawRadius, ball.y - drawRadius, size, size);
+  } else {
+    // Fallback gradient while images are still loading.
+    const gradient = ctx.createRadialGradient(
+      ball.x - 3, ball.y - 3, 1,
+      ball.x,     ball.y,     ball.radius
+    );
+    gradient.addColorStop(0, "#ffffff");
+    gradient.addColorStop(1, "#a0a0a0");
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+    ctx.fillStyle = gradient;
+    ctx.fill();
+  }
 }
 
 function drawAimLine() {
@@ -523,10 +783,60 @@ function drawHint() {
 //  GAME LOOP — runs ~60 times per second
 // =============================================
 
+function drawTitleScreen() {
+  // Advance animation at ~8fps (every 8 game ticks at 60fps)
+  titleFrameTick++;
+  if (titleFrameTick >= 8) {
+    titleFrameTick = 0;
+    titleFrame = (titleFrame + 1) % imgTitle.length;
+  }
+
+  const img = imgTitle[titleFrame];
+  if (img.complete && img.naturalWidth > 0) {
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  } else {
+    // Fallback colour while images load
+    ctx.fillStyle = '#1a1a2e';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+}
+
+function startGame() {
+  gameState = 'playing';
+  document.getElementById('ui-bar').style.visibility = 'visible';
+  // Load level data but don't swap music yet — this lets the title music
+  // actually start (the browser's autoplay resume fires on the same keydown/click
+  // that calls startGame, so swapping src immediately would silence it).
+  loadLevel(0, true);
+  // Switch to Level 1 music after a short delay so the title music is audible.
+  setTimeout(() => {
+    bgMusic.src = levels[0].music;
+    bgMusic.load();
+    bgMusic.play().catch(() => {});
+  }, 800);
+}
+
 function gameLoop() {
-  updateBall();
-  draw();
-  requestAnimationFrame(gameLoop); // schedules the next frame
+  if (gameState === 'title') {
+    drawTitleScreen();
+  } else {
+    updateBall();
+
+    if (isMoving) {
+      ballFrameTick++;
+      if (ballFrameTick >= 6) {
+        ballFrameTick = 0;
+        ballFrame = (ballFrame + 1) % 3;
+      }
+    } else {
+      ballFrame = 0;
+      ballFrameTick = 0;
+    }
+
+    draw();
+  }
+
+  requestAnimationFrame(gameLoop);
 }
 
 // =============================================
@@ -536,25 +846,62 @@ function gameLoop() {
 function triggerWin() {
   gameWon = true;
   winShotsEl.textContent = shots;
+  const isLastLevel = currentLevel === levels.length - 1;
+  winTitleEl.textContent = isLastLevel ? 'Course Complete!' : 'Hole Complete!';
+  nextHoleBtn.classList.toggle('hidden', isLastLevel);
   winScreen.classList.remove("hidden");
 }
 
-function resetGame() {
-  // Restore ball to start position
+function nextLevel() {
+  currentLevel++;
+  loadLevel(currentLevel);
+}
+
+function loadLevel(index, keepMusic = false) {
+  const level = levels[index];
+
+  // Update active level data
+  HOLE.x = level.hole.x;
+  HOLE.y = level.hole.y;
+  HOLE.radius = level.hole.radius;
+
+  WALLS.length = 0;
+  level.walls.forEach(w => WALLS.push(w));
+
+  BALL_START.x = level.ballStart.x;
+  BALL_START.y = level.ballStart.y;
+
+  // Rebuild tile grid so the green zone moves to the new hole position
+  buildTileGrid();
+
+  // Switch music track (skipped when keepMusic is true, e.g. on initial game start)
+  if (!keepMusic) {
+    bgMusic.src = level.music;
+    bgMusic.load();
+    bgMusic.play().catch(() => {});
+  }
+
+  // Update hole label
+  levelLabelEl.textContent = `Hole ${index + 1}`;
+
+  // Reset game state for the new hole
   ball.x = BALL_START.x;
   ball.y = BALL_START.y;
   ball.velX = 0;
   ball.velY = 0;
-
   shots = 0;
   gameWon = false;
   isMoving = false;
   canvas.classList.remove("ball-rolling");
   aim.active = false;
   aim.currentX = undefined;
-
   updateShotCounter();
   winScreen.classList.add("hidden");
+}
+
+function resetGame() {
+  // Restart the current hole from scratch
+  loadLevel(currentLevel);
 }
 
 function updateShotCounter() {

@@ -36,6 +36,7 @@ body {
   padding: 8px 12px;
   background-color: #16213e;
   border-radius: 8px 8px 0 0;
+  visibility: hidden; /* hidden on title screen; shown when game starts */
 }
 
 #title-label {
@@ -106,7 +107,35 @@ button:hover {
 #win-box h2 {
   font-size: 1.8rem;
   color: #ffd460;
-  margin-bottom: 20px;
+  margin-bottom: 8px;
+}
+
+#win-shots-line {
+  font-size: 1rem;
+  color: #ccc;
+  margin-bottom: 24px;
+}
+
+#win-buttons {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+#next-hole-btn {
+  background-color: #1a6b3a;
+  border-color: #4ecb71;
+  color: #fff;
+  font-weight: bold;
+}
+
+#next-hole-btn:hover {
+  background-color: #23934f;
+}
+
+#level-label {
+  font-size: 1rem;
+  color: #a8edea;
 }
 
 /* Utility class to hide any element */
