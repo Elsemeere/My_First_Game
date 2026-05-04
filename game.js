@@ -216,20 +216,39 @@ document.addEventListener("keydown", e => {
 window.addEventListener("mousemove", onMouseMove);
 window.addEventListener("mouseup", onMouseUp);
 
-// Also support touch for mobile/tablet
-canvas.addEventListener("touchstart",  e => { e.preventDefault(); onMouseDown(e.touches[0]); }, { passive: false });
-canvas.addEventListener("touchmove",   e => { e.preventDefault(); onMouseMove(e.touches[0]); }, { passive: false });
-canvas.addEventListener("touchend",    e => { e.preventDefault(); onMouseUp(e.changedTouches[0]); }, { passive: false });
+// Touch support — only intercept single-finger touches so pinch-to-zoom works naturally.
+// When a second finger appears, cancel any in-progress aim and let the browser handle it.
+canvas.addEventListener("touchstart", e => {
+  if (e.touches.length === 1) {
+    e.preventDefault();
+    onMouseDown(e.touches[0]);
+  } else {
+    aim.active = false; // cancel aim if pinch starts mid-drag
+  }
+}, { passive: false });
+
+canvas.addEventListener("touchmove", e => {
+  if (e.touches.length === 1) {
+    e.preventDefault();
+    onMouseMove(e.touches[0]);
+  }
+}, { passive: false });
+
+canvas.addEventListener("touchend", e => {
+  // Only fire if this was the last finger lifting (not one finger of a pinch releasing)
+  if (e.touches.length === 0 && e.changedTouches.length === 1) {
+    e.preventDefault();
+    onMouseUp(e.changedTouches[0]);
+  }
+}, { passive: false });
 
 function getCanvasPos(event) {
   // Converts a page-level mouse/touch position to canvas-local coordinates.
-  // scaleX/Y account for CSS scaling (when the container shrinks to fit small screens).
+  // With viewport width=700, CSS pixels match canvas pixels exactly — no scale needed.
   const rect = canvas.getBoundingClientRect();
-  const scaleX = canvas.width  / rect.width;
-  const scaleY = canvas.height / rect.height;
   return {
-    x: (event.clientX - rect.left) * scaleX,
-    y: (event.clientY - rect.top)  * scaleY,
+    x: event.clientX - rect.left,
+    y: event.clientY - rect.top,
   };
 }
 
@@ -935,21 +954,6 @@ function resetGame() {
 function updateShotCounter() {
   shotCounterEl.textContent = `Shots: ${shots}`;
 }
-
-// =============================================
-//  RESPONSIVE SCALING
-//  Shrinks the whole game container to fit narrow screens (phones).
-//  Uses CSS transform so the win screen and UI bar scale with it.
-//  getCanvasPos() already accounts for the scale via getBoundingClientRect().
-// =============================================
-
-function fitToScreen() {
-  // 716 = 700px canvas + a small breathing margin
-  const scale = Math.min(1, window.innerWidth / 716);
-  document.getElementById('game-container').style.transform = `scale(${scale})`;
-}
-window.addEventListener('resize', fitToScreen);
-fitToScreen();
 
 // =============================================
 //  START
