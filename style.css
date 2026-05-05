@@ -113,7 +113,44 @@ button:hover {
 #win-shots-line {
   font-size: 1rem;
   color: #ccc;
-  margin-bottom: 24px;
+  margin-bottom: 6px;
+}
+
+#par-line {
+  font-size: 1rem;
+  font-weight: bold;
+  margin-bottom: 16px;
+}
+
+/* Scorecard shown after the final hole */
+#scorecard {
+  margin-bottom: 20px;
+  border-top: 1px solid rgba(168, 237, 234, 0.25);
+  padding-top: 14px;
+}
+
+#score-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+#score-table td {
+  padding: 4px 12px;
+  text-align: center;
+}
+
+/* Row labels (Hole, Par, Score) */
+#score-table td:first-child {
+  text-align: left;
+  color: #a8edea;
+  font-weight: bold;
+}
+
+/* Total column */
+#score-table td:last-child {
+  font-weight: bold;
+  border-left: 1px solid rgba(168, 237, 234, 0.25);
 }
 
 #win-buttons {

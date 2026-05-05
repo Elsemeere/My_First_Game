@@ -13,10 +13,15 @@ const levelLabelEl   = document.getElementById("level-label");
 const winScreen      = document.getElementById("win-screen");
 const winShotsEl     = document.getElementById("win-shots");
 const winTitleEl     = document.getElementById("win-title");
+const parLineEl      = document.getElementById("par-line");
+const scorecardEl    = document.getElementById("scorecard");
 const nextHoleBtn    = document.getElementById("next-hole-btn");
+const playAgainBtn   = document.getElementById("play-again-btn");
 document.getElementById("reset-btn").addEventListener("click", resetGame);
-document.getElementById("play-again-btn").addEventListener("click", resetGame);
+playAgainBtn.addEventListener("click", () => playAgainBtn._action());
 nextHoleBtn.addEventListener("click", nextLevel);
+// Default action for the play-again button — overridden per-context in triggerWin()
+playAgainBtn._action = resetGame;
 
 // =============================================
 //  AUDIO
@@ -115,6 +120,7 @@ const levels = [
       { x: 0,   y: 325, w: 560, h: 18 }, // Gate 1: gap on RIGHT
       { x: 140, y: 168, w: 560, h: 18 }, // Gate 2: gap on LEFT
     ],
+    par:   3,
     music: 'Music/Level 1 Music.mp3',
   },
   {
@@ -126,6 +132,7 @@ const levels = [
       { x: 140, y: 230, w: 542, h: 18 }, // Gate 2: gap on LEFT  (18-140)
       { x: 0,   y: 130, w: 540, h: 18 }, // Gate 3: gap on RIGHT (540-682)
     ],
+    par:   4,
     music: 'Music/Level 1 Music.mp3',
   },
   {
@@ -141,6 +148,7 @@ const levels = [
       { x: 175, y: 248, w: 350, h: 18,
         moveAxis: 'x', moveMin: 18, moveMax: 332, moveSpeed: 1.5, moveDir: 1 },
     ],
+    par:   4,
     music: 'Music/Level 1 Music.mp3',
   },
 ];
@@ -178,6 +186,7 @@ let ballFrameTick = 0;     // counts game ticks; frame advances every 6 ticks (~
 let tileGrid = [];         // 2D array of 'rough'|'fairway'|'green', built once per level
 let bgLayer  = null;       // offscreen canvas with pre-drawn background tiles (rebuilt per level)
 let hintDismissed = false; // hint hides permanently after the player's first ever shot
+let holeScores    = [];   // shots taken on each completed hole, used for the scorecard
 
 // Aiming state — tracks the mouse drag
 const aim = {
@@ -896,11 +905,89 @@ function updateMovingWalls() {
 
 function triggerWin() {
   gameWon = true;
+  holeScores.push(shots);
+
+  const level   = levels[currentLevel];
+  const diff    = shots - level.par;
+  const isLast  = currentLevel === levels.length - 1;
+
   winShotsEl.textContent = shots;
-  const isLastLevel = currentLevel === levels.length - 1;
-  winTitleEl.textContent = isLastLevel ? 'Course Complete!' : 'Hole Complete!';
-  nextHoleBtn.classList.toggle('hidden', isLastLevel);
-  winScreen.classList.remove("hidden");
+
+  // Par-relative result line
+  if (diff <= -2) {
+    parLineEl.textContent = `${Math.abs(diff)} under par!`;
+    parLineEl.style.color = '#4ecb71';
+  } else if (diff === -1) {
+    parLineEl.textContent = '1 under par!';
+    parLineEl.style.color = '#4ecb71';
+  } else if (diff === 0) {
+    parLineEl.textContent = 'Par!';
+    parLineEl.style.color = '#ffd460';
+  } else if (diff === 1) {
+    parLineEl.textContent = '1 over par';
+    parLineEl.style.color = '#e87c5a';
+  } else {
+    parLineEl.textContent = `${diff} over par`;
+    parLineEl.style.color = '#e74c3c';
+  }
+
+  if (isLast) {
+    winTitleEl.textContent = 'Course Complete!';
+    nextHoleBtn.classList.add('hidden');
+    showScorecard();
+    playAgainBtn.textContent = 'Play Again';
+    playAgainBtn._action = startNewGame;
+  } else {
+    winTitleEl.textContent = 'Hole Complete!';
+    nextHoleBtn.classList.remove('hidden');
+    scorecardEl.classList.add('hidden');
+    playAgainBtn.textContent = 'Restart Hole';
+    playAgainBtn._action = resetGame;
+  }
+
+  winScreen.classList.remove('hidden');
+}
+
+function showScorecard() {
+  const holesRow = document.getElementById('score-holes-row');
+  const parRow   = document.getElementById('score-par-row');
+  const shotsRow = document.getElementById('score-shots-row');
+  const diffRow  = document.getElementById('score-diff-row');
+
+  holesRow.innerHTML = '<td>Hole</td>';
+  parRow.innerHTML   = '<td>Par</td>';
+  shotsRow.innerHTML = '<td>Score</td>';
+  diffRow.innerHTML  = '<td></td>';
+
+  let totalPar = 0, totalShots = 0;
+
+  levels.forEach((lvl, i) => {
+    const s    = holeScores[i];
+    const p    = lvl.par;
+    const d    = s - p;
+    totalPar   += p;
+    totalShots += s;
+
+    const color = d < 0 ? '#4ecb71' : d === 0 ? '#ffd460' : '#e87c5a';
+    const sign  = d > 0 ? '+' : '';
+
+    holesRow.innerHTML += `<td>${i + 1}</td>`;
+    parRow.innerHTML   += `<td>${p}</td>`;
+    shotsRow.innerHTML += `<td>${s}</td>`;
+    diffRow.innerHTML  += `<td style="color:${color}">${sign}${d}</td>`;
+  });
+
+  // Total column
+  const td    = totalShots - totalPar;
+  const tcol  = td < 0 ? '#4ecb71' : td === 0 ? '#ffd460' : '#e87c5a';
+  const tsign = td > 0 ? '+' : '';
+
+  holesRow.innerHTML += '<td>Total</td>';
+  parRow.innerHTML   += `<td>${totalPar}</td>`;
+  shotsRow.innerHTML += `<td>${totalShots}</td>`;
+  diffRow.innerHTML  += `<td style="color:${tcol}">${tsign}${td}</td>`;
+
+  scorecardEl.classList.remove('hidden');
 }
 
 function nextLevel() {
@@ -953,8 +1040,20 @@ function loadLevel(index) {
 }
 
 function resetGame() {
-  // Restart the current hole from scratch
+  // If the hole was already completed, remove its score so replaying doesn't double-count.
+  if (gameWon) holeScores.pop();
+  playAgainBtn.textContent = 'Restart Hole';
+  playAgainBtn._action = resetGame;
   loadLevel(currentLevel);
+}
+
+function startNewGame() {
+  // Full restart from hole 1 — clear all accumulated scores.
+  holeScores = [];
+  currentLevel = 0;
+  playAgainBtn.textContent = 'Restart Hole';
+  playAgainBtn._action = resetGame;
+  loadLevel(0);
 }
 
 function updateShotCounter() {
