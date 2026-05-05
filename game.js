@@ -1022,7 +1022,7 @@ function loadLevel(index) {
   }
 
   // Update hole label
-  levelLabelEl.textContent = `Hole ${index + 1}`;
+  levelLabelEl.textContent = `Hole ${index + 1} · Par ${level.par}`;
 
   // Reset game state for the new hole
   ball.x = BALL_START.x;
