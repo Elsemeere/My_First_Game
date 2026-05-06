@@ -188,6 +188,9 @@ let bgLayer  = null;       // offscreen canvas with pre-drawn background tiles (
 let hintDismissed = false; // hint hides permanently after the player's first ever shot
 let holeScores    = [];   // shots taken on each completed hole, used for the scorecard
 
+// Sink animation — plays when the ball reaches the hole before the win screen appears
+const sinkAnim = { active: false, progress: 0, startX: 0, startY: 0 };
+
 // Aiming state — tracks the mouse drag
 const aim = {
   active: false,  // true while the player is holding the mouse down
@@ -383,16 +386,35 @@ function updateBall() {
     canvas.classList.remove("ball-rolling");
   }
 
-  // Check win condition
+  // Check win condition — start the sink animation instead of showing win screen immediately
   const distToHole = Math.sqrt(
     (ball.x - HOLE.x) * (ball.x - HOLE.x) +
     (ball.y - HOLE.y) * (ball.y - HOLE.y)
   );
-  if (distToHole < HOLE.radius) {
+  if (distToHole < HOLE.radius && !sinkAnim.active && !gameWon) {
     ball.velX = 0;
     ball.velY = 0;
     isMoving = false;
     canvas.classList.remove("ball-rolling");
+    sinkAnim.active   = true;
+    sinkAnim.progress = 0;
+    sinkAnim.startX   = ball.x;
+    sinkAnim.startY   = ball.y;
+  }
+}
+
+function updateSinkAnimation() {
+  if (!sinkAnim.active) return;
+
+  sinkAnim.progress += 1 / 30; // 30 frames = ~0.5 s at 60fps
+
+  // Ease-in: ball accelerates toward the hole center as it "falls" in
+  const ease = sinkAnim.progress * sinkAnim.progress;
+  ball.x = sinkAnim.startX + (HOLE.x - sinkAnim.startX) * ease;
+  ball.y = sinkAnim.startY + (HOLE.y - sinkAnim.startY) * ease;
+
+  if (sinkAnim.progress >= 1) {
+    sinkAnim.active = false;
     triggerWin();
   }
 }
@@ -615,6 +637,16 @@ function drawHole() {
   ctx.lineTo(HOLE.x, HOLE.y - HOLE.radius - 8);
   ctx.fillStyle = "#e74c3c";
   ctx.fill();
+
+  // Ripple ring expanding outward as the ball drops in
+  if (sinkAnim.active) {
+    const t = sinkAnim.progress;
+    ctx.beginPath();
+    ctx.arc(HOLE.x, HOLE.y, HOLE.radius + t * 24, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(0, 0, 0, ${(1 - t) * 0.6})`;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
 }
 
 function drawWalls() {
@@ -752,22 +784,25 @@ function drawPerimeterWall() {
 }
 
 function drawBall() {
-  const img        = imgBallRoll[ballFrame];
-  const drawRadius = ball.radius + 10; // visually larger than physics radius
-  const size       = drawRadius * 2;
+  // Shrink to nothing as the ball sinks into the hole
+  const scale      = sinkAnim.active ? (1 - sinkAnim.progress) : 1;
+  const drawRadius = (ball.radius + 10) * scale;
+  if (drawRadius <= 0) return;
+
+  const img  = imgBallRoll[ballFrame];
+  const size = drawRadius * 2;
 
   if (img.complete && img.naturalWidth > 0) {
     ctx.drawImage(img, ball.x - drawRadius, ball.y - drawRadius, size, size);
   } else {
-    // Fallback gradient while images are still loading.
     const gradient = ctx.createRadialGradient(
       ball.x - 3, ball.y - 3, 1,
-      ball.x,     ball.y,     ball.radius
+      ball.x,     ball.y,     drawRadius
     );
     gradient.addColorStop(0, "#ffffff");
     gradient.addColorStop(1, "#a0a0a0");
     ctx.beginPath();
-    ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+    ctx.arc(ball.x, ball.y, drawRadius, 0, Math.PI * 2);
     ctx.fillStyle = gradient;
     ctx.fill();
   }
@@ -861,6 +896,7 @@ function gameLoop() {
   } else {
     updateMovingWalls();
     updateBall();
+    updateSinkAnimation();
 
     if (isMoving) {
       ballFrameTick++;
@@ -904,6 +940,7 @@ function updateMovingWalls() {
 // =============================================
 
 function triggerWin() {
+  if (gameWon) return; // guard against double-calls (e.g. S key during animation)
   gameWon = true;
   holeScores.push(shots);
 
@@ -1032,6 +1069,8 @@ function loadLevel(index) {
   shots = 0;
   gameWon = false;
   isMoving = false;
+  sinkAnim.active = false;
+  sinkAnim.progress = 0;
   canvas.classList.remove("ball-rolling");
   aim.active = false;
   aim.currentX = undefined;
