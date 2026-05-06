@@ -59,16 +59,17 @@ let currentMusicSrc = ''; // tracks what's playing so we don't restart the same 
 
 // =============================================
 //  TILE IMAGES
-//  Loaded asynchronously — the game loop starts only once all 3 are ready.
+//  Loaded asynchronously — the game loop starts only once all 4 are ready.
 // =============================================
 const imgFairway = new Image();
 const imgRough   = new Image();
 const imgGreen   = new Image();
+const imgWater   = new Image();
 
 let tilesLoaded = 0;
 function onTileLoaded() {
   tilesLoaded++;
-  if (tilesLoaded === 3) {
+  if (tilesLoaded === 4) {
     // Tile assets ready — start the game loop in title-screen mode.
     // loadLevel(0) is called only when the player presses Enter / clicks Start.
     gameLoop();
@@ -77,10 +78,12 @@ function onTileLoaded() {
 imgFairway.onload = onTileLoaded;
 imgRough.onload   = onTileLoaded;
 imgGreen.onload   = onTileLoaded;
+imgWater.onload   = onTileLoaded;
 
 imgFairway.src = 'Graphic Assets/Tiles/Fairway Tile.png';
 imgRough.src   = 'Graphic Assets/Tiles/Rough Tile.png';
 imgGreen.src   = 'Graphic Assets/Tiles/Green Tile.png';
+imgWater.src   = 'Graphic Assets/Tiles/Water Tile.png';
 
 // Wall tile images — horizontal and vertical variants.
 const imgHorzWall = new Image();
@@ -151,6 +154,20 @@ const levels = [
     par:   4,
     music: 'Music/Level 1 Music.mp3',
   },
+  {
+    // Hole 4 — L-shaped wall forces an upward detour; water hazard in the top-right
+    // punishes a straight line; a gate on the right leads to the bottom-right hole.
+    ballStart: { x: 60,  y: 445 },
+    hole:      { x: 655, y: 445, radius: 14 },
+    water:     { x: 540, y: 18,  w: 142, h: 302 }, // top-right rectangle
+    walls: [
+      { x: 305, y: 225, w: 18,  h: 242 }, // L vertical — blocks direct right path
+      { x: 305, y: 225, w: 255, h: 18  }, // L horizontal
+      { x: 560, y: 415, w: 80,  h: 18  }, // Gate wall — gap on right (x=640-682) leads to hole
+    ],
+    par:   5,
+    music: 'Music/Level 1 Music.mp3',
+  },
 ];
 
 // =============================================
@@ -158,9 +175,10 @@ const levels = [
 //  Initialised from levels[0]; loadLevel() updates these each hole.
 // =============================================
 
-const HOLE      = { x: 630, y: 60, radius: 14 };
-const WALLS     = [];
+const HOLE       = { x: 630, y: 60, radius: 14 };
+const WALLS      = [];
 const BALL_START = { x: 60, y: 440 };
+const WATER_ZONE = { active: false, x: 0, y: 0, w: 0, h: 0 };
 
 // The ball — starts at BALL_START; vel = velocity per frame
 const ball = {
@@ -185,8 +203,9 @@ let ballFrame     = 0;     // which sprite frame (0-2) is currently showing
 let ballFrameTick = 0;     // counts game ticks; frame advances every 6 ticks (~10fps)
 let tileGrid = [];         // 2D array of 'rough'|'fairway'|'green', built once per level
 let bgLayer  = null;       // offscreen canvas with pre-drawn background tiles (rebuilt per level)
-let hintDismissed = false; // hint hides permanently after the player's first ever shot
-let holeScores    = [];   // shots taken on each completed hole, used for the scorecard
+let hintDismissed        = false; // hint hides permanently after the player's first ever shot
+let holeScores           = [];   // shots taken on each completed hole, used for the scorecard
+let waterPenaltyTimer    = 0;    // frames remaining to show "Water! +1" message
 
 // Sink animation — plays when the ball reaches the hole before the win screen appears
 const sinkAnim = { active: false, progress: 0, startX: 0, startY: 0 };
@@ -386,6 +405,24 @@ function updateBall() {
     canvas.classList.remove("ball-rolling");
   }
 
+  // Check water hazard — reset to start with a one-stroke penalty
+  if (WATER_ZONE.active) {
+    const inWater = ball.x >= WATER_ZONE.x && ball.x <= WATER_ZONE.x + WATER_ZONE.w &&
+                    ball.y >= WATER_ZONE.y && ball.y <= WATER_ZONE.y + WATER_ZONE.h;
+    if (inWater) {
+      shots++;
+      updateShotCounter();
+      waterPenaltyTimer = 120; // show message for ~2 seconds
+      ball.x    = BALL_START.x;
+      ball.y    = BALL_START.y;
+      ball.velX = 0;
+      ball.velY = 0;
+      isMoving  = false;
+      canvas.classList.remove("ball-rolling");
+      return;
+    }
+  }
+
   // Check win condition — start the sink animation instead of showing win screen immediately
   const distToHole = Math.sqrt(
     (ball.x - HOLE.x) * (ball.x - HOLE.x) +
@@ -539,6 +576,7 @@ function buildTileGrid() {
       const type = tileGrid[row][col];
       const img  = type === 'rough' ? imgRough
                  : type === 'green' ? imgGreen
+                 : type === 'water' ? imgWater
                  :                    imgFairway;
       bgCtx.drawImage(img, col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
     }
@@ -546,7 +584,14 @@ function buildTileGrid() {
 }
 
 function classifyTile(col, row, cx, cy) {
-  // 1. Green — smooth putting surface around the hole (highest priority)
+  // 0. Water zone — overrides everything else
+  if (WATER_ZONE.active &&
+      cx >= WATER_ZONE.x && cx <= WATER_ZONE.x + WATER_ZONE.w &&
+      cy >= WATER_ZONE.y && cy <= WATER_ZONE.y + WATER_ZONE.h) {
+    return 'water';
+  }
+
+  // 1. Green — smooth putting surface around the hole
   const dHole = Math.sqrt((cx - HOLE.x) ** 2 + (cy - HOLE.y) ** 2);
   if (dHole < GREEN_RADIUS) return 'green';
 
@@ -602,11 +647,34 @@ function draw() {
   if (!gameWon && !hintDismissed && !isMoving) {
     drawHint();
   }
+
+  // Water penalty message — fades out over the last 40 frames
+  if (waterPenaltyTimer > 0) {
+    waterPenaltyTimer--;
+    drawWaterMessage();
+  }
 }
 
 function drawBackground() {
   // Single drawImage from the pre-baked offscreen canvas — replaces ~350 calls per frame.
   if (bgLayer) ctx.drawImage(bgLayer, 0, 0);
+}
+
+function drawWaterMessage() {
+  const alpha = Math.min(1, waterPenaltyTimer / 40); // fade out in final 40 frames
+  const text  = 'Water Hazard! +1 Penalty';
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.font = 'bold 22px Arial';
+  ctx.textAlign = 'center';
+  const tw = ctx.measureText(text).width;
+  ctx.fillStyle = 'rgba(0, 60, 140, 0.78)';
+  ctx.beginPath();
+  ctx.roundRect(canvas.width / 2 - tw / 2 - 18, canvas.height / 2 - 22, tw + 36, 38, 8);
+  ctx.fill();
+  ctx.fillStyle = '#7dd4fc';
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2 + 9);
+  ctx.restore();
 }
 
 function drawHole() {
@@ -1046,6 +1114,18 @@ function loadLevel(index) {
 
   BALL_START.x = level.ballStart.x;
   BALL_START.y = level.ballStart.y;
+
+  // Set up water zone (or clear it for levels without water)
+  if (level.water) {
+    WATER_ZONE.active = true;
+    WATER_ZONE.x = level.water.x;
+    WATER_ZONE.y = level.water.y;
+    WATER_ZONE.w = level.water.w;
+    WATER_ZONE.h = level.water.h;
+  } else {
+    WATER_ZONE.active = false;
+  }
+  waterPenaltyTimer = 0;
 
   // Rebuild tile grid so the green zone moves to the new hole position
   buildTileGrid();
