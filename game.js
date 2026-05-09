@@ -155,15 +155,24 @@ const levels = [
     music: 'Music/Level 1 Music.mp3',
   },
   {
-    // Hole 4 — L-shaped wall forces an upward detour; water hazard in the top-right
-    // punishes a straight line; a gate on the right leads to the bottom-right hole.
-    ballStart: { x: 60,  y: 445 },
-    hole:      { x: 655, y: 445, radius: 14 },
-    water:     { x: 540, y: 18,  w: 142, h: 302 }, // top-right rectangle
+    // Hole 4 — L-wall traps the ball bottom-left; must go over the L, down through
+    // the corridor between the L and right wall, under the right wall, then right
+    // to the hole — staying below the water the whole way across.
+    //
+    // Layout:
+    //   L vertical  x=190-208, y=130-482  (seals the left section bottom to top)
+    //   L horizontal x=190-380, y=130-148  (top bar of the L)
+    //   Right wall  x=380-500, y=290-308  (connects flush to water left edge)
+    //   Water       x=500-682, y=18-292   (top-right; bottom aligns with right wall)
+    //
+    // Path: up over L → right past x=208 → down to y>310 → right under wall at y>310 → hole
+    ballStart: { x: 90,  y: 445 },
+    hole:      { x: 555, y: 445, radius: 14 },
+    water:     { x: 500, y: 18,  w: 182, h: 274 },
     walls: [
-      { x: 305, y: 225, w: 18,  h: 242 }, // L vertical — blocks direct right path
-      { x: 305, y: 225, w: 255, h: 18  }, // L horizontal
-      { x: 560, y: 415, w: 80,  h: 18  }, // Gate wall — gap on right (x=640-682) leads to hole
+      { x: 190, y: 130, w: 18,  h: 352 }, // L vertical
+      { x: 190, y: 130, w: 190, h: 18  }, // L horizontal
+      { x: 380, y: 290, w: 120, h: 18  }, // Right wall — right end flush with water left edge
     ],
     par:   5,
     music: 'Music/Level 1 Music.mp3',
